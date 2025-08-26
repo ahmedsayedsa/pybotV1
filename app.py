@@ -6,6 +6,9 @@ from fastapi.staticfiles import StaticFiles
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
+from api.routes import auth, admin, user
+from config.settings import settings
+from config.firebase import init_firebase
 import os
 import logging
 
