@@ -1,6 +1,6 @@
 import firebase_admin
 from firebase_admin import credentials, firestore
-from src.config.settings import settings
+from config.settings import settings  # تغيير من src.config.settings إلى config.settings
 import logging
 
 logger = logging.getLogger(__name__)
