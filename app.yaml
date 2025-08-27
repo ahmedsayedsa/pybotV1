@@ -1,0 +1,14 @@
+# app.yaml
+
+runtime: python311  # أو python312 حسب إصدار بايثون في بيئتك
+
+# نقطة الدخول لتشغيل تطبيق FastAPI في بيئة الإنتاج
+entrypoint: gunicorn -w 4 -k uvicorn.workers.UvicornWorker app:app
+
+# متغيرات البيئة التي سيقرأها تطبيقك
+env_variables:
+  # !!! مهم جداً: استبدل هذا بالمفتاح السري الحقيقي من مشروعك !!!
+  JWT_SECRET: 'your_actual_super_secret_key_that_you_use_locally'
+  
+  # يمكنك إضافة متغيرات أخرى هنا إذا احتجت إليها
+  # ALGORITHM: 'HS256' 
