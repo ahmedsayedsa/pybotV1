@@ -5,20 +5,20 @@
 # ---------------------------------------------------------------------------
 import os
 import logging
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
-from slowapi.errors import RateLimitExceeded
 
 # ---------------------------------------------------------------------------
 # 2. إعداد السجلات (Logging) - خطوة حاسمة للتشخيص
 # ---------------------------------------------------------------------------
-# هذا يضمن أن الرسائل ستظهر في سجلات Google Cloud Run بشكل فوري وواضح
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logging.basicConfig(
+    level=logging.INFO, 
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[logging.StreamHandler()]
+)
 logger = logging.getLogger(__name__)
 
 logger.info("-----> [STARTUP] app.py script execution started.")
@@ -27,13 +27,14 @@ logger.info("-----> [STARTUP] app.py script execution started.")
 # 3. تهيئة تطبيق FastAPI والمكونات الأساسية
 # ---------------------------------------------------------------------------
 try:
-    limiter = Limiter(key_func=get_remote_address)
-    app = FastAPI(title="WhatsApp Subscription Management", version="1.0.0")
-    app.state.limiter = limiter
-    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
-    logger.info("-----> [STARTUP] FastAPI app and rate limiter initialized.")
+    app = FastAPI(
+        title="WhatsApp Subscription Management", 
+        version="1.0.0",
+        description="A FastAPI application for WhatsApp subscription management"
+    )
+    logger.info("-----> [STARTUP] FastAPI app initialized.")
 except Exception as e:
-    logger.critical(f"-----> [FATAL STARTUP ERROR] Failed to initialize FastAPI or Limiter: {e}", exc_info=True)
+    logger.critical(f"-----> [FATAL STARTUP ERROR] Failed to initialize FastAPI: {e}", exc_info=True)
     raise
 
 # ---------------------------------------------------------------------------
@@ -57,73 +58,168 @@ except Exception as e:
     raise
 
 # ---------------------------------------------------------------------------
-# 5. استيراد وربط المسارات (Routers)
+# 5. نقاط النهاية (Endpoints) الأساسية
 # ---------------------------------------------------------------------------
+@app.get("/", tags=["Root"])
+async def root():
+    """صفحة البداية الأساسية."""
+    return {
+        "message": "WhatsApp Subscription Management API", 
+        "version": "1.0.0",
+        "status": "running",
+        "endpoints": {
+            "health": "/health",
+            "docs": "/docs",
+            "redoc": "/redoc"
+        }
+    }
+
+@app.get("/health", tags=["Health"])
+async def health_check():
+    """نقطة نهاية بسيطة للتحقق من أن التطبيق يعمل."""
+    return {
+        "status": "healthy", 
+        "version": "1.0.0",
+        "message": "Application is running successfully"
+    }
+
+@app.get("/test", tags=["Test"])
+async def test_endpoint():
+    """نقطة اختبار بسيطة."""
+    return {
+        "message": "FastAPI is working perfectly!", 
+        "status": "success",
+        "timestamp": "2025-08-27"
+    }
+
+# ---------------------------------------------------------------------------
+# 6. استيراد وربط المسارات (Routers) - مع معالجة الأخطاء
+# ---------------------------------------------------------------------------
+routes_loaded = []
+
 try:
-    from api.routes import auth, admin, user
+    from api.routes import auth
     app.include_router(auth.router)
-    app.include_router(admin.router)
-    app.include_router(user.router)
-    logger.info("-----> [STARTUP] API routes (auth, admin, user) loaded successfully.")
+    routes_loaded.append("auth")
+    logger.info("-----> [STARTUP] Auth routes loaded successfully.")
 except ImportError as e:
-    logger.critical(f"-----> [FATAL STARTUP ERROR] Could not load API routes: {e}", exc_info=True)
-    raise
-
-# ---------------------------------------------------------------------------
-# 6. تهيئة Firebase
-# ---------------------------------------------------------------------------
-try:
-    from config.firebase import db
-    if db:
-        logger.info("-----> [STARTUP] Firebase connection object 'db' imported successfully.")
-    else:
-        # هذا قد يشير إلى مشكلة في الاتصال أو الإعدادات
-        logger.warning("-----> [STARTUP] Firebase module loaded, but 'db' object is None or False.")
+    logger.warning(f"-----> [STARTUP WARNING] Could not load auth routes: {e}")
 except Exception as e:
-    logger.critical(f"-----> [FATAL STARTUP ERROR] Failed to import or initialize Firebase: {e}", exc_info=True)
-    raise
+    logger.error(f"-----> [STARTUP ERROR] Error loading auth routes: {e}")
+
+try:
+    from api.routes import admin
+    app.include_router(admin.router)
+    routes_loaded.append("admin")
+    logger.info("-----> [STARTUP] Admin routes loaded successfully.")
+except ImportError as e:
+    logger.warning(f"-----> [STARTUP WARNING] Could not load admin routes: {e}")
+except Exception as e:
+    logger.error(f"-----> [STARTUP ERROR] Error loading admin routes: {e}")
+
+try:
+    from api.routes import user
+    app.include_router(user.router)
+    routes_loaded.append("user")
+    logger.info("-----> [STARTUP] User routes loaded successfully.")
+except ImportError as e:
+    logger.warning(f"-----> [STARTUP WARNING] Could not load user routes: {e}")
+except Exception as e:
+    logger.error(f"-----> [STARTUP ERROR] Error loading user routes: {e}")
+
+logger.info(f"-----> [STARTUP] Routes loaded: {routes_loaded}")
 
 # ---------------------------------------------------------------------------
-# 7. خدمة الملفات الثابتة (Static Files)
+# 7. تهيئة Firebase - مع معالجة الأخطاء
+# ---------------------------------------------------------------------------
+db = None
+try:
+    from config.firebase import db as firebase_db
+    db = firebase_db
+    if db:
+        logger.info("-----> [STARTUP] Firebase connection established successfully.")
+    else:
+        logger.warning("-----> [STARTUP] Firebase module loaded, but 'db' object is None.")
+except ImportError as e:
+    logger.warning(f"-----> [STARTUP WARNING] Could not import Firebase config: {e}")
+except Exception as e:
+    logger.error(f"-----> [STARTUP ERROR] Firebase initialization error: {e}")
+
+# ---------------------------------------------------------------------------
+# 8. خدمة الملفات الثابتة (Static Files)
 # ---------------------------------------------------------------------------
 if os.path.exists("public"):
-    app.mount("/static", StaticFiles(directory="public"), name="static")
-    logger.info("-----> [STARTUP] Static files mounted from 'public' directory.")
+    try:
+        app.mount("/static", StaticFiles(directory="public"), name="static")
+        logger.info("-----> [STARTUP] Static files mounted from 'public' directory.")
+    except Exception as e:
+        logger.error(f"-----> [STARTUP ERROR] Failed to mount static files: {e}")
 else:
     logger.warning("-----> [STARTUP] 'public' directory not found. Static files will not be served.")
 
 # ---------------------------------------------------------------------------
-# 8. نقاط النهاية (Endpoints) الأساسية
+# 9. خدمة صفحات HTML - مع معالجة الأخطاء
 # ---------------------------------------------------------------------------
-@app.get("/health", tags=["Health"])
-@limiter.limit("10/minute")
-async def health_check(request: Request):
-    """نقطة نهاية بسيطة للتحقق من أن التطبيق يعمل."""
-    return {"status": "healthy", "version": "1.0.0"}
+@app.get("/login", response_class=HTMLResponse, tags=["HTML"])
+async def serve_login():
+    """خدمة صفحة تسجيل الدخول."""
+    try:
+        if os.path.exists("public/login.html"):
+            with open("public/login.html", "r", encoding="utf-8") as f:
+                return HTMLResponse(content=f.read())
+        else:
+            raise HTTPException(status_code=404, detail="Login page not found")
+    except Exception as e:
+        logger.error(f"Error serving login page: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
-# خدمة صفحات HTML
-if os.path.exists("public/login.html"):
-    @app.get("/", response_class=HTMLResponse, tags=["HTML"])
-    async def serve_login():
-        with open("public/login.html", "r") as f:
-            return HTMLResponse(content=f.read())
+@app.get("/admin", response_class=HTMLResponse, tags=["HTML"])
+async def serve_admin():
+    """خدمة صفحة الأدمن."""
+    try:
+        if os.path.exists("public/admin.html"):
+            with open("public/admin.html", "r", encoding="utf-8") as f:
+                return HTMLResponse(content=f.read())
+        else:
+            raise HTTPException(status_code=404, detail="Admin page not found")
+    except Exception as e:
+        logger.error(f"Error serving admin page: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
-if os.path.exists("public/admin.html"):
-    @app.get("/admin", response_class=HTMLResponse, tags=["HTML"])
-    async def serve_admin():
-        with open("public/admin.html", "r") as f:
-            return HTMLResponse(content=f.read())
-
-if os.path.exists("public/user.html"):
-    @app.get("/user", response_class=HTMLResponse, tags=["HTML"])
-    async def serve_user():
-        with open("public/user.html", "r") as f:
-            return HTMLResponse(content=f.read())
-
-logger.info("-----> [STARTUP] Root and HTML routes configured.")
+@app.get("/user", response_class=HTMLResponse, tags=["HTML"])
+async def serve_user():
+    """خدمة صفحة المستخدم."""
+    try:
+        if os.path.exists("public/user.html"):
+            with open("public/user.html", "r", encoding="utf-8") as f:
+                return HTMLResponse(content=f.read())
+        else:
+            raise HTTPException(status_code=404, detail="User page not found")
+    except Exception as e:
+        logger.error(f"Error serving user page: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 # ---------------------------------------------------------------------------
-# 9. نقطة الدخول لتشغيل Uvicorn (للتطوير المحلي فقط)
+# 10. معالج الأخطاء العام
+# ---------------------------------------------------------------------------
+@app.exception_handler(404)
+async def not_found_handler(request: Request, exc: HTTPException):
+    return JSONResponse(
+        status_code=404,
+        content={"message": "Page not found", "path": str(request.url)}
+    )
+
+@app.exception_handler(500)
+async def internal_error_handler(request: Request, exc: HTTPException):
+    return JSONResponse(
+        status_code=500,
+        content={"message": "Internal server error", "path": str(request.url)}
+    )
+
+logger.info("-----> [STARTUP] HTML routes and error handlers configured.")
+
+# ---------------------------------------------------------------------------
+# 11. نقطة الدخول لتشغيل Uvicorn (للتطوير المحلي فقط)
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
     import uvicorn
@@ -131,4 +227,6 @@ if __name__ == "__main__":
     uvicorn.run("app:app", host="0.0.0.0", port=8080, reload=True)
 else:
     # هذه الرسالة ستظهر عند التشغيل عبر Gunicorn في Cloud Run
-    logger.info("-----> [STARTUP] Application startup sequence complete. Handing over to Gunicorn/Uvicorn worker.")
+    logger.info("-----> [STARTUP] Application startup sequence complete. Ready to serve requests.")
+    logger.info(f"-----> [STARTUP] Available routes loaded: {routes_loaded}")
+    logger.info(f"-----> [STARTUP] Firebase status: {'Connected' if db else 'Not connected'}")
