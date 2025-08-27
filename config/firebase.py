@@ -1,37 +1,42 @@
+# config/firebase.py
+
 import firebase_admin
 from firebase_admin import credentials, firestore
-from config.settings import settings
 import logging
 
 logger = logging.getLogger(__name__)
+db = None
 
 def init_firebase():
-    try:
-        if not firebase_admin._apps:
-            # إذا كانت بيانات الاعتماد غير صحيحة، استخدم التطبيق الافتراضي (للتطوير)
-            if not settings.firebase_private_key or settings.firebase_private_key == "test-key":
-                logger.warning("Using default Firebase app for development")
-                firebase_admin.initialize_app()
-            else:
-                # تنظيف المفتاح من الأحرف الزائدة
-                private_key = settings.firebase_private_key
-                if private_key.startswith('"') and private_key.endswith('"'):
-                    private_key = private_key[1:-1]
-                private_key = private_key.replace('\\n', '\n')
-                
-                cred = credentials.Certificate({
-                    "type": "service_account",
-                    "project_id": settings.firebase_project_id,
-                    "client_email": settings.firebase_client_email,
-                    "private_key": private_key
-                })
-                firebase_admin.initialize_app(cred)
-                logger.info("Firebase initialized successfully")
-        return firestore.client()
-    except Exception as e:
-        logger.error(f"Failed to initialize Firebase: {str(e)}")
-        # بدلاً من رفع استثناء، يمكننا إرجاع عميل وهمي للتطوير
-        logger.warning("Continuing without Firebase for development")
-        return None
+    """
+    يهيئ Firebase باستخدام بيانات الاعتماد الافتراضية للتطبيق (ADC).
+    هذه الطريقة تعمل محلياً (بعد gcloud auth) وفي بيئة Google Cloud (App Engine, etc.).
+    """
+    global db
+    
+    # تحقق مما إذا كان التطبيق قد تم تهيئته بالفعل لتجنب الأخطاء
+    if not firebase_admin._apps:
+        try:
+            logger.info("☁️ Initializing Firebase using Application Default Credentials...")
+            
+            # هذه هي الطريقة الموصى بها. لا تحتاج إلى ملفات JSON أو متغيرات بيئة للمفاتيح.
+            # هي تستخدم حساب الخدمة تلقائياً في App Engine.
+            cred = credentials.ApplicationDefault()
+            
+            firebase_admin.initialize_app(cred, {
+                'projectId': 'whatsapp-bot-dashboard', # <-- ضع معرف المشروع هنا
+            })
+            
+            logger.info("✅ Firebase initialized successfully!")
+            db = firestore.client()
 
-db = init_firebase()
+        except Exception as e:
+            logger.critical(f"❌ FAILED to initialize Firebase: {e}", exc_info=True)
+            db = None
+    else:
+        # إذا كان مهيأ بالفعل، فقط احصل على العميل
+        if not db:
+            db = firestore.client()
+
+# قم باستدعاء الدالة عند استيراد الملف
+init_firebase()
