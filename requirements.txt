@@ -1,0 +1,20 @@
+# الخادم والتطبيق الأساسي
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+gunicorn==21.2.0
+
+# إدارة الإعدادات والمتغيرات البيئية
+pydantic-settings==2.1.0
+python-dotenv==1.0.0
+
+# الاتصال بـ Firebase
+firebase-admin==6.2.0
+google-cloud-firestore==2.11.1
+
+# المصادقة والتشفير
+passlib[bcrypt]==1.7.4
+python-jose[cryptography]==3.3.0
+
+# أدوات مساعدة لـ FastAPI
+python-multipart==0.0.6
+slowapi==0.1.9
