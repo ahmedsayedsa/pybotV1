@@ -1,21 +1,28 @@
-# 1. استخدم صورة بايثون رسمية كأساس
+# المرحلة 1: استخدام صورة بايثون رسمية كنقطة بداية
 FROM python:3.11-slim
 
-# 2. قم بتعيين متغيرات البيئة
+# تعيين متغيرات البيئة
 ENV PYTHONDONTWRITEBYTECODE 1
 ENV PYTHONUNBUFFERED 1
 
-# 3. قم بتعيين مجلد العمل داخل الحاوية
+# تعيين مجلد العمل داخل الحاوية
 WORKDIR /app
 
-# 4. انسخ ملف متطلبات المكتبات أولاً
+# نسخ ملف المتطلبات أولاً للاستفادة من التخزين المؤقت لـ Docker
 COPY requirements.txt .
 
-# 5. قم بتثبيت المكتبات
-RUN pip install --no-cache-dir -r requirements.txt
+# تثبيت المتطلبات
+# --no-cache-dir لتقليل حجم الصورة
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
 
-# 6. انسخ بقية كود التطبيق إلى مجلد العمل
+# نسخ باقي كود المشروع إلى مجلد العمل
 COPY . .
 
-# 7. الأمر الذي سيتم تشغيله عند بدء تشغيل الحاوية
-CMD exec gunicorn -w 4 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:$PORT app:app
+# تعيين متغير البيئة PORT الذي تستخدمه Cloud Run و Railway
+# القيمة الافتراضية 8080 إذا لم يتم توفيرها
+ENV PORT 8080
+
+# الأمر النهائي لتشغيل التطبيق باستخدام Gunicorn
+# هذا هو الأمر القياسي لتشغيل تطبيقات FastAPI في بيئة الإنتاج
+CMD ["gunicorn", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "-b", "0.0.0.0:$PORT", "app:app"]
