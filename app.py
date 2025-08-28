@@ -5,9 +5,10 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.cors import CORSMiddleware
 
 # --- استيراد المسارات (Routes) من مجلد api ---
+# تأكد من أن هذه المسارات صحيحة لمشروعك
 from api.routes.auth import router as auth_router
 from api.routes.admin import router as admin_router
-from api.routes.user import router as user_router # افترضت أن هذا هو المسار الثالث
+from api.routes.user import router as user_router
 
 # --- إعدادات التسجيل (Logging) ---
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(asctime)s %(message)s')
@@ -25,12 +26,10 @@ app.add_middleware(
 )
 
 # --- تحميل الملفات الثابتة (HTML, CSS, JS) ---
-# مجلد public يحتوي على ملفات HTML
 app.mount("/public", StaticFiles(directory="public"), name="public")
 
 # --- تضمين المسارات في التطبيق الرئيسي ---
 logging.info("Including routers...")
-# لا يوجد public_router، الصفحات العامة قد تكون ضمن auth_router
 app.include_router(auth_router, prefix="/auth", tags=["Authentication"])
 app.include_router(admin_router, prefix="/admin", tags=["Admin"])
 app.include_router(user_router, prefix="/user", tags=["User"])
@@ -40,8 +39,8 @@ logging.info("Routers included successfully.")
 # --- Endpoint سري ومؤقت لإنشاء الأدمن ---
 @app.get("/setup/create_admin_user_secretly", tags=["Setup"])
 async def create_admin_secretly():
+    # الاستيراد داخل الدالة لتجنب أي مشاكل في بدء التشغيل
     from config.firebase import db
-    # --- المسار الصحيح لـ firestore_repo ---
     from repositories.firestore_repo import pwd_context
     from google.cloud import firestore
     
@@ -53,10 +52,32 @@ async def create_admin_secretly():
 
     try:
         logging.info(f"SECRET ENDPOINT: Attempting to create/update admin user: {ADMIN_EMAIL}")
+        
         hashed_password = pwd_context.hash(ADMIN_PASSWORD)
         
+        # --- هذا هو القسم الذي كان به الخطأ على الأرجح ---
         user_data = {
             'email': ADMIN_EMAIL,
             'password_hash': hashed_password,
             'role': 'admin',
-            'subscription_e
+            'subscription_expiry': None,
+            'created_at': firestore.SERVER_TIMESTAMP
+        }
+        # -------------------------------------------------
+        
+        user_ref = db.collection('users').document(ADMIN_EMAIL)
+        user_ref.set(user_data, merge=True)
+        
+        logging.info(f"SECRET ENDPOINT: Admin user '{ADMIN_EMAIL}' created/updated successfully!")
+        return {"status": "success", "message": f"Admin user {ADMIN_EMAIL} created/updated."}
+    
+    except Exception as e:
+        logging.error(f"SECRET ENDPOINT ERROR: {e}", exc_info=True)
+        return {"status": "error", "message": "An internal error occurred."}
+
+
+@app.get("/", tags=["Root"])
+async def root():
+    return {"message": "Welcome to PyBot V1 API. Visit /auth/login to start."}
+
+logging.info("Application startup sequence complete. Ready to serve requests.")
