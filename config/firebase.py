@@ -1,42 +1,28 @@
 # config/firebase.py
-
 import firebase_admin
 from firebase_admin import credentials, firestore
+import os
+import json
 import logging
 
-logger = logging.getLogger(__name__)
 db = None
 
-def init_firebase():
-    """
-    يهيئ Firebase باستخدام بيانات الاعتماد الافتراضية للتطبيق (ADC).
-    هذه الطريقة تعمل محلياً (بعد gcloud auth) وفي بيئة Google Cloud (App Engine, etc.).
-    """
-    global db
-    
-    # تحقق مما إذا كان التطبيق قد تم تهيئته بالفعل لتجنب الأخطاء
-    if not firebase_admin._apps:
-        try:
-            logger.info("☁️ Initializing Firebase using Application Default Credentials...")
-            
-            # هذه هي الطريقة الموصى بها. لا تحتاج إلى ملفات JSON أو متغيرات بيئة للمفاتيح.
-            # هي تستخدم حساب الخدمة تلقائياً في App Engine.
-            cred = credentials.ApplicationDefault()
-            
-            firebase_admin.initialize_app(cred, {
-                'projectId': 'whatsapp-bot-dashboard', # <-- ضع معرف المشروع هنا
-            })
-            
-            logger.info("✅ Firebase initialized successfully!")
-            db = firestore.client()
-
-        except Exception as e:
-            logger.critical(f"❌ FAILED to initialize Firebase: {e}", exc_info=True)
-            db = None
+try:
+    # الطريقة الأولى (للإنتاج مثل Railway): قراءة المتغير من البيئة
+    creds_json_str = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON")
+    if creds_json_str:
+        logging.info("Found GOOGLE_APPLICATION_CREDENTIALS_JSON env var. Initializing with JSON content.")
+        creds_dict = json.loads(creds_json_str)
+        cred = credentials.Certificate(creds_dict)
     else:
-        # إذا كان مهيأ بالفعل، فقط احصل على العميل
-        if not db:
-            db = firestore.client()
+        # الطريقة الثانية (للتطوير المحلي أو VM): استخدام بيانات الاعتماد الافتراضية
+        logging.info("Env var not found. Initializing with default credentials.")
+        cred = credentials.ApplicationDefault()
 
-# قم باستدعاء الدالة عند استيراد الملف
-init_firebase()
+    firebase_admin.initialize_app(cred)
+    db = firestore.client()
+    logging.info("✅ Firebase Admin SDK initialized successfully. Firestore client is ready.")
+
+except Exception as e:
+    logging.error(f"❌ Failed to initialize Firebase Admin SDK: {e}", exc_info=True)
+
