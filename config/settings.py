@@ -1,21 +1,30 @@
-from pydantic_settings import BaseSettings
-from pydantic import Field
-from functools import lru_cache
+# config/settings.py
+
 import os
-from typing import Optional
+from dotenv import load_dotenv
 
-class Settings(BaseSettings):
-    port: int = Field(8080, env="PORT")
-    jwt_secret: Optional[str] = Field(None, env="JWT_SECRET")  # جعلها اختيارية
-    firebase_project_id: str = Field("chrome-backbone-458221-m9", env="FIREBASE_PROJECT_ID")
-    firebase_client_email: str = Field("firebase-adminsdk@chrome-backbone-458221-m9.iam.gserviceaccount.com", env="FIREBASE_CLIENT_EMAIL")
-    firebase_private_key: Optional[str] = Field(None, env="FIREBASE_PRIVATE_KEY")  # جعلها اختيارية
+# يقوم بتحميل متغيرات البيئة من ملف .env (مهم للتطوير المحلي)
+load_dotenv()
+
+class Settings:
+    """
+    يحتوي على جميع إعدادات التطبيق.
+    يقرأ القيم من متغيرات البيئة أولاً، ثم يستخدم قيمة افتراضية إذا لم يجدها.
+    """
+    project_name: str = "WhatsApp Subscription Management"
+    version: str = "1.0.0"
+
+    # --- هذا هو الجزء الأهم ---
+    # يقرأ المفتاح السري من متغير البيئة JWT_SECRET
+    jwt_secret: str = os.getenv("JWT_SECRET")
     
-    class Config:
-        env_file = ".env"
+    # تأكد من أن لديك متغيرات أخرى مثل الخوارزمية إذا كنت تستخدمها
+    # algorithm: str = os.getenv("ALGORITHM", "HS256")
 
-@lru_cache()
-def get_settings():
-    return Settings()
+    # --- تحقق حيوي ---
+    if not jwt_secret:
+        raise ValueError("FATAL ERROR: JWT_SECRET environment variable is not set.")
 
-settings = get_settings()
+# إنشاء نسخة واحدة من الإعدادات لاستخدامها في جميع أنحاء التطبيق
+settings = Settings()
+ 
